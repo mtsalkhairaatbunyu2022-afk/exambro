@@ -1,0 +1,190 @@
+name: Build APK & Sync to Cloudflare Pages Branch
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths-ignore:
+      - "**.md"
+  workflow_dispatch:
+    inputs:
+      release_notes:
+        description: "Catatan pembaruan untuk siswa/admin"
+        required: false
+        default: "Pembaruan keamanan dan fitur Exambro MTs Alkhairaat Bunyu"
+      force_update:
+        description: "Wajibkan siswa update sebelum masuk ujian?"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-sync-pages:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: |
+            platform-tools
+            platforms;android-36.1
+            build-tools;36.0.0
+
+      - name: Accept Android SDK Licenses
+        run: |
+          yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.3.1"
+
+      - name: Compute Version Code & Name
+        id: version
+        run: |
+          VERSION_CODE=$((100 + ${{ github.run_number }}))
+          VERSION_NAME="1.0.${{ github.run_number }}"
+          echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "Building versionCode=$VERSION_CODE versionName=$VERSION_NAME"
+
+      - name: Build Signed APK
+        id: build
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "Menggunakan Release Keystore dari GitHub Secrets..."
+            echo "$KEYSTORE_BASE64" | base64 --decode > "${{ github.workspace }}/my-upload-key.jks"
+            export KEYSTORE_PATH="${{ github.workspace }}/my-upload-key.jks"
+            gradle assembleRelease \
+              -PappVersionCode=${{ steps.version.outputs.code }} \
+              -PappVersionName=${{ steps.version.outputs.name }} \
+              -Dorg.gradle.jvmargs="-Xmx3g -Dfile.encoding=UTF-8" \
+              --no-daemon
+            echo "apk_path=app/build/outputs/apk/release/app-release.apk" >> "$GITHUB_OUTPUT"
+          else
+            echo "Menggunakan debug.keystore.base64 bawaan (sama dengan APK export AI Studio)..."
+            base64 --decode debug.keystore.base64 > debug.keystore
+            gradle assembleDebug \
+              -PappVersionCode=${{ steps.version.outputs.code }} \
+              -PappVersionName=${{ steps.version.outputs.name }} \
+              -Dorg.gradle.jvmargs="-Xmx3g -Dfile.encoding=UTF-8" \
+              --no-daemon
+            echo "apk_path=app/build/outputs/apk/debug/app-debug.apk" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Prepare Cloudflare Pages Output (dist/)
+        env:
+          APK_SRC: ${{ steps.build.outputs.apk_path }}
+          RELEASE_NOTES_VAL: ${{ github.event.inputs.release_notes || github.event.head_commit.message || 'Pembaruan aplikasi Exambro MTs Bunyu' }}
+          REPO_FULL: ${{ github.repository }}
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+          FORCE_UPDATE: ${{ github.event.inputs.force_update || 'false' }}
+        run: |
+          mkdir -p dist release-assets
+          cp "$APK_SRC" release-assets/exambro-release.apk
+          cp cloudflare/pages/_headers dist/_headers
+
+          APK_BYTES=$(stat -c%s "$APK_SRC")
+          # Batas maksimal ukuran 1 file di Cloudflare Pages adalah 25 MiB (26214400 bytes).
+          if [ "$APK_BYTES" -le 25600000 ]; then
+            cp "$APK_SRC" dist/exambro-release.apk
+            export APK_URL="/exambro-release.apk"
+          else
+            export APK_URL="https://github.com/${REPO_FULL}/releases/download/latest/exambro-release.apk"
+          fi
+
+          python3 - << 'PY'
+          import json, os, html
+          from datetime import datetime, timezone
+
+          version_code = int(os.environ["VERSION_CODE"])
+          version_name = os.environ["VERSION_NAME"]
+          apk_url = os.environ["APK_URL"]
+          notes = os.environ.get("RELEASE_NOTES_VAL", "Pembaruan aplikasi Exambro MTs Bunyu")
+          force_update = os.environ.get("FORCE_UPDATE", "false").lower() == "true"
+          updated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+          data = {
+              "versionCode": version_code,
+              "versionName": version_name,
+              "apkUrl": apk_url,
+              "releaseNotes": notes,
+              "forceUpdate": force_update,
+              "updatedAt": updated_at
+          }
+          with open("dist/version.json", "w", encoding="utf-8") as f:
+              json.dump(data, f, indent=2)
+
+          escaped_notes = html.escape(notes)
+          page_html = f"""<!DOCTYPE html>
+          <html lang="id">
+          <head>
+            <meta charset="UTF-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <title>Exambro MTs Alkhairaat Bunyu - Update Center</title>
+            <style>
+              body {{ font-family: system-ui, sans-serif; background: #0d1f12; color: #f2f8f3; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; }}
+              .card {{ background: #16301d; border: 1px solid #2e7d32; border-radius: 16px; max-width: 440px; width: 100%; padding: 26px; text-align: center; box-shadow: 0 12px 30px rgba(0,0,0,0.4); }}
+              h1 {{ font-size: 20px; margin-bottom: 8px; color: #7dff6b; }}
+              p {{ font-size: 14px; color: #cbe3cf; line-height: 1.5; }}
+              .badge {{ display: inline-block; background: #1f4b2a; border: 1px solid #4caf50; color: #a5f39c; padding: 4px 12px; border-radius: 99px; font-size: 13px; font-weight: bold; margin-bottom: 12px; }}
+              .btn {{ display: inline-block; margin-top: 16px; background: #2e7d32; color: #fff; text-decoration: none; font-weight: bold; padding: 12px 24px; border-radius: 10px; }}
+            </style>
+          </head>
+          <body>
+            <div class="card">
+              <h1>Exambro MTs Alkhairaat Bunyu</h1>
+              <div class="badge">Versi Terbaru: v{version_name} (Build {version_code})</div>
+              <p>{escaped_notes}</p>
+              <a class="btn" href="{apk_url}">Download APK Terbaru</a>
+            </div>
+          </body>
+          </html>
+          """
+          with open("dist/index.html", "w", encoding="utf-8") as f:
+              f.write(page_html)
+          PY
+
+      - name: Push dist/ to cloudflare-pages branch (untuk diambil otomatis oleh Cloudflare Pages)
+        run: |
+          cd dist
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b cloudflare-pages
+          git add .
+          git commit -m "Update Exambro v${{ steps.version.outputs.name }} (build ${{ steps.version.outputs.code }})"
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push --force origin cloudflare-pages
+
+      - name: Publish Backup to GitHub Release (latest)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "Exambro Latest Release (v${{ steps.version.outputs.name }})"
+          body: "Rilis otomatis Exambro MTs Alkhairaat Bunyu v${{ steps.version.outputs.name }} (build ${{ steps.version.outputs.code }})."
+          files: |
+            release-assets/exambro-release.apk
+            dist/version.json
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

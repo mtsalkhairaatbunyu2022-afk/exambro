@@ -1,0 +1,6 @@
+{
+  "name": "EXAMBRO MTS",
+  "description": "Enterprise-grade Secure CBT System with anti-cheat and lock task mode.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

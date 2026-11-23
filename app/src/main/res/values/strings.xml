@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">EXAMBRO MTS</string>
+    <string name="cloudflare_update_url">https://DOMAIN-CLOUDFLARE-EXAMBRO-ANDA.pages.dev/version.json</string>
+</resources>
