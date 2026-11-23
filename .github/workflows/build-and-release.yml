@@ -60,6 +60,12 @@ jobs:
           echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
           echo "Building versionCode=$VERSION_CODE versionName=$VERSION_NAME"
 
+      - name: Restore Cached CI Debug Keystore
+        uses: actions/cache@v4
+        with:
+          path: ci-debug.keystore
+          key: ci-debug-keystore-v1
+
       - name: Build Signed APK
         id: build
         env:
@@ -78,8 +84,25 @@ jobs:
               --no-daemon
             echo "apk_path=app/build/outputs/apk/release/app-release.apk" >> "$GITHUB_OUTPUT"
           else
-            echo "Menggunakan debug.keystore.base64 bawaan (sama dengan APK export AI Studio)..."
-            base64 --decode debug.keystore.base64 > debug.keystore
+            if [ -f "debug.keystore.base64" ]; then
+              echo "Menggunakan debug.keystore.base64 bawaan..."
+              base64 --decode debug.keystore.base64 > debug.keystore
+            elif [ -f "ci-debug.keystore" ]; then
+              echo "Menggunakan ci-debug.keystore dari cache GitHub Actions..."
+              cp ci-debug.keystore debug.keystore
+            else
+              echo "debug.keystore.base64 tidak ada di repo (disaring saat push); membuat debug.keystore standar via keytool..."
+              keytool -genkeypair -v \
+                -keystore debug.keystore \
+                -storepass android \
+                -alias androiddebugkey \
+                -keypass android \
+                -keyalg RSA \
+                -keysize 2048 \
+                -validity 10000 \
+                -dname "CN=Android Debug,O=Android,C=US"
+              cp debug.keystore ci-debug.keystore
+            fi
             gradle assembleDebug \
               -PappVersionCode=${{ steps.version.outputs.code }} \
               -PappVersionName=${{ steps.version.outputs.name }} \
