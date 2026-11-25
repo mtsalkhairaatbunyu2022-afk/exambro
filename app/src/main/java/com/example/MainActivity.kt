@@ -450,7 +450,7 @@ fun RunningText3D() {
         initialValue = 1.2f,
         targetValue = -1.2f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 15000, easing = LinearEasing),
+            animation = tween(durationMillis = 21000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "offset"
