@@ -198,7 +198,7 @@ class MainActivity : ComponentActivity() {
 
                 try {
                     tts?.setPitch(1.0f)
-                    tts?.setSpeechRate(1.3f)
+                    tts?.setSpeechRate(1.0f)
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
