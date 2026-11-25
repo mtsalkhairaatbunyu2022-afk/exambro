@@ -79,6 +79,9 @@ class MainActivity : ComponentActivity() {
 
     private var tts: TextToSpeech? = null
     private var isTtsInitialized = false
+    private var isTtsInitializing = false
+    private var hasRetriedGoogleEngine = false
+    private var ttsRecoveryCount = 0
     private var shouldSpeakWelcomeOnResume = false
     private val pendingSpeechQueue = java.util.Collections.synchronizedList(mutableListOf<Pair<String, Int>>())
 
@@ -107,7 +110,7 @@ class MainActivity : ComponentActivity() {
         try {
             val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
             val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, maxVol, AudioManager.FLAG_PLAY_SOUND)
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, maxVol, 0)
             
             // Request audio focus transiently to ensure TTS sound plays loudly on all Android versions
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -129,74 +132,109 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun initTts(forceRecreate: Boolean = false, preferredEngine: String? = null) {
+        if (isTtsInitializing && !forceRecreate) return
+        isTtsInitializing = true
+
+        if (forceRecreate) {
+            isTtsInitialized = false
+            try {
+                tts?.stop()
+                tts?.shutdown()
+            } catch (_: Exception) {
+            }
+            tts = null
+        }
+
+        val listener = TextToSpeech.OnInitListener { status ->
+            isTtsInitializing = false
+            if (status == TextToSpeech.SUCCESS) {
+                hasRetriedGoogleEngine = false
+                ttsRecoveryCount = 0
+
+                val indonesianLocales = listOf(
+                    Locale("id", "ID"),
+                    Locale("id"),
+                    Locale("in", "ID"),
+                    Locale("in"),
+                    Locale.getDefault(),
+                    Locale.US
+                )
+                for (loc in indonesianLocales) {
+                    try {
+                        val res = tts?.setLanguage(loc)
+                        if (res != TextToSpeech.LANG_MISSING_DATA && res != TextToSpeech.LANG_NOT_SUPPORTED) {
+                            break
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                    try {
+                        val attrs = android.media.AudioAttributes.Builder()
+                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                            .build()
+                        tts?.setAudioAttributes(attrs)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+
+                try {
+                    tts?.setPitch(1.0f)
+                    tts?.setSpeechRate(1.3f)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+
+                isTtsInitialized = true
+
+                // Drain queued speeches once TTS is initialized
+                val speechesToRun = synchronized(pendingSpeechQueue) {
+                    if (pendingSpeechQueue.isEmpty()) {
+                        pendingSpeechQueue.add(Pair("Selamat datang", TextToSpeech.QUEUE_FLUSH))
+                    }
+                    val copy = pendingSpeechQueue.toList()
+                    pendingSpeechQueue.clear()
+                    copy
+                }
+                for ((speechText, mode) in speechesToRun) {
+                    speakInternal(speechText, mode)
+                }
+            } else if (!hasRetriedGoogleEngine) {
+                hasRetriedGoogleEngine = true
+                initTts(forceRecreate = true, preferredEngine = "com.google.android.tts")
+            }
+        }
+
+        try {
+            tts = if (preferredEngine != null) {
+                TextToSpeech(applicationContext, listener, preferredEngine)
+            } else {
+                TextToSpeech(applicationContext, listener)
+            }
+        } catch (e: Exception) {
+            isTtsInitializing = false
+            e.printStackTrace()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
         instance = this
         shouldSpeakWelcomeOnResume = false
-        
-        // Initialize Text-to-Speech (TTS) engine immediately for fast welcome speech
-        try {
-            tts = TextToSpeech(this) { status ->
-                if (status == TextToSpeech.SUCCESS) {
-                    val indonesianLocales = listOf(
-                        Locale("id", "ID"),
-                        Locale("id"),
-                        Locale("in", "ID"),
-                        Locale("in"),
-                        Locale.getDefault(),
-                        Locale.US
-                    )
-                    for (loc in indonesianLocales) {
-                        try {
-                            val res = tts?.setLanguage(loc)
-                            if (res != TextToSpeech.LANG_MISSING_DATA && res != TextToSpeech.LANG_NOT_SUPPORTED) {
-                                break
-                            }
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        }
-                    }
+        ttsRecoveryCount = 0
 
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-                        try {
-                            val attrs = android.media.AudioAttributes.Builder()
-                                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
-                                .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
-                                .build()
-                            tts?.setAudioAttributes(attrs)
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        }
-                    }
-
-                    try {
-                        tts?.setPitch(1.0f)
-                        tts?.setSpeechRate(1.25f)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-
-                    isTtsInitialized = true
-
-                    // Drain queued speeches once TTS is initialized
-                    synchronized(pendingSpeechQueue) {
-                        if (pendingSpeechQueue.isEmpty()) {
-                            pendingSpeechQueue.add(Pair("Selamat datang", TextToSpeech.QUEUE_FLUSH))
-                        }
-                        for ((speechText, mode) in pendingSpeechQueue) {
-                            speakInternal(speechText, mode)
-                        }
-                        pendingSpeechQueue.clear()
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
+        // Queue default welcome speech and initialize TTS immediately
+        synchronized(pendingSpeechQueue) {
+            pendingSpeechQueue.clear()
+            pendingSpeechQueue.add(Pair("Selamat datang", TextToSpeech.QUEUE_FLUSH))
         }
-
-        // Queue default welcome speech right away
-        speak("Selamat datang", TextToSpeech.QUEUE_FLUSH)
+        initTts(forceRecreate = true)
         
         // Note: FLAG_SECURE is applied only when entering ActiveExamScreen so the main menu renders normally in Preview
         enableEdgeToEdge()
@@ -214,7 +252,7 @@ class MainActivity : ComponentActivity() {
 
     fun speak(text: String, queueMode: Int = TextToSpeech.QUEUE_FLUSH) {
         if (text.isBlank()) return
-        if (isTtsInitialized) {
+        if (isTtsInitialized && tts != null) {
             speakInternal(text, queueMode)
         } else {
             synchronized(pendingSpeechQueue) {
@@ -223,24 +261,36 @@ class MainActivity : ComponentActivity() {
                 }
                 pendingSpeechQueue.add(Pair(text, queueMode))
             }
+            if (!isTtsInitializing) {
+                initTts(forceRecreate = true)
+            }
         }
     }
 
     private fun speakInternal(text: String, queueMode: Int) {
         try {
             forceMaxVolume()
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+            val result = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
                 val params = android.os.Bundle()
                 params.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC)
                 params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
-                tts?.speak(text, queueMode, params, "ExambroTTS_${System.currentTimeMillis()}")
+                tts?.speak(text, queueMode, params, "ExambroTTS_${System.currentTimeMillis()}") ?: TextToSpeech.ERROR
             } else {
                 @Suppress("DEPRECATION")
                 val params = HashMap<String, String>()
                 params[TextToSpeech.Engine.KEY_PARAM_STREAM] = AudioManager.STREAM_MUSIC.toString()
                 params[TextToSpeech.Engine.KEY_PARAM_VOLUME] = "1.0"
                 @Suppress("DEPRECATION")
-                tts?.speak(text, queueMode, params)
+                tts?.speak(text, queueMode, params) ?: TextToSpeech.ERROR
+            }
+
+            if (result != TextToSpeech.SUCCESS && ttsRecoveryCount < 2) {
+                ttsRecoveryCount++
+                synchronized(pendingSpeechQueue) {
+                    pendingSpeechQueue.clear()
+                    pendingSpeechQueue.add(Pair(text, queueMode))
+                }
+                initTts(forceRecreate = true)
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -263,8 +313,18 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             e.printStackTrace()
         }
+        tts = null
+        isTtsInitialized = false
+        isTtsInitializing = false
         if (instance == this) {
             instance = null
+        }
+    }
+
+    override fun onRestart() {
+        super.onRestart()
+        if (!isExamActive) {
+            shouldSpeakWelcomeOnResume = true
         }
     }
 
@@ -272,11 +332,12 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         if (shouldSpeakWelcomeOnResume && !isExamActive) {
             shouldSpeakWelcomeOnResume = false
-            window.decorView.post {
+            ttsRecoveryCount = 0
+            window.decorView.postDelayed({
                 if (!isExamActive) {
                     speak("Selamat datang", TextToSpeech.QUEUE_FLUSH)
                 }
-            }
+            }, 120L)
         }
     }
 
