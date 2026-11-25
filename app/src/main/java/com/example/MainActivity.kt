@@ -71,6 +71,8 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
 import com.example.ui.theme.MyApplicationTheme
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
@@ -87,19 +89,30 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         var isExamActive by mutableStateOf(false)
+        var isExamDialogOpen by mutableStateOf(false)
         var violationCount by mutableStateOf(0)
         var hasCheatedLockout by mutableStateOf(false)
         var showWarningDialog by mutableStateOf(false)
         var lastViolationReason by mutableStateOf("")
         var instance: MainActivity? = null
+        private var lastViolationEventMs: Long = 0L
+        private var lastViolationSpeechMs: Long = 0L
 
         fun triggerViolation(reason: String) {
             if (!isExamActive) return
+            val now = System.currentTimeMillis()
             lastViolationReason = reason
-            violationCount++
+            if (now - lastViolationEventMs > 1200L) {
+                lastViolationEventMs = now
+                violationCount++
+            }
             
-            // Force maximum volume so the audio alert plays loudly and un-mutes the device!
+            // Force maximum volume and speak loud warning so supervisor hears when student leaves exam
             instance?.forceMaxVolume()
+            if (now - lastViolationSpeechMs > 1500L) {
+                lastViolationSpeechMs = now
+                instance?.speak("Peringatan! Siswa keluar dari ujian!", TextToSpeech.QUEUE_FLUSH)
+            }
             
             // Unlimited attempts allowed (no permanent lockout), only show warning dialog
             showWarningDialog = true
@@ -357,7 +370,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (isExamActive && !hasFocus && !hasCheatedLockout) {
+        if (isExamActive && !hasFocus && !hasCheatedLockout && !isExamDialogOpen) {
             triggerViolation("Membuka Menu Recent Apps / Aplikasi Mengambang (Floating App like ChatGPT / AI Bubble) / Menarik Status Bar")
         }
     }
@@ -544,6 +557,7 @@ class SecureExamWebView(context: Context) : android.webkit.WebView(context) {
         isLongClickable = false
         isHapticFeedbackEnabled = false
         setOnLongClickListener { true }
+        setOnDragListener { _, _ -> true }
     }
 
     override fun performLongClick(): Boolean = true
@@ -611,7 +625,7 @@ private fun injectAntiCopyProtection(view: android.webkit.WebView) {
                         doc.addEventListener('contextmenu', blockEvent, true);
                         doc.addEventListener('dragstart', blockEvent, true);
                         doc.addEventListener('beforeinput', function(e) {
-                            if (e.inputType === 'insertFromPaste' || e.inputType === 'insertFromDrop') {
+                            if (e.inputType === 'insertFromPaste' || e.inputType === 'insertFromDrop' || e.inputType === 'insertFromYank') {
                                 e.preventDefault();
                                 e.stopPropagation();
                                 return false;
@@ -711,6 +725,18 @@ fun WatermarkOverlay(
 }
 
 @Composable
+private fun SecureExamDialogFlag() {
+    val view = LocalView.current
+    DisposableEffect(view) {
+        try {
+            (view.parent as? DialogWindowProvider)?.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        } catch (_: Exception) {
+        }
+        onDispose {}
+    }
+}
+
+@Composable
 fun ActiveExamScreen(url: String, onFinishExam: () -> Unit) {
     var studentName by remember { mutableStateOf("") }
     val context = LocalContext.current
@@ -745,6 +771,10 @@ fun ActiveExamScreen(url: String, onFinishExam: () -> Unit) {
     }
     
     DisposableEffect(Unit) {
+        try {
+            activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        } catch (_: Exception) {
+        }
         val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
         val clipListener = ClipboardManager.OnPrimaryClipChangedListener {
             if (MainActivity.isExamActive) {
@@ -766,6 +796,7 @@ fun ActiveExamScreen(url: String, onFinishExam: () -> Unit) {
 
         onDispose {
             MainActivity.isExamActive = false
+            MainActivity.isExamDialogOpen = false
             try {
                 activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
             } catch (_: Exception) {
@@ -783,9 +814,11 @@ fun ActiveExamScreen(url: String, onFinishExam: () -> Unit) {
         }
     }
 
-
-
     var showExitDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(showExitDialog, showSettingsDialog, MainActivity.showWarningDialog) {
+        MainActivity.isExamDialogOpen = showExitDialog || showSettingsDialog || MainActivity.showWarningDialog
+    }
 
     // Intercept physical Back button press during an active exam to prevent student from exiting (Lock it completely)
     BackHandler(enabled = true) {
@@ -795,7 +828,10 @@ fun ActiveExamScreen(url: String, onFinishExam: () -> Unit) {
     if (showExitDialog) {
         AlertDialog(
             onDismissRequest = { showExitDialog = false },
-            title = { Text("Keluar Ujian") },
+            title = {
+                SecureExamDialogFlag()
+                Text("Keluar Ujian")
+            },
             text = { Text("Apakah Anda yakin ingin keluar dari halaman ujian yang aman?") },
             confirmButton = {
                 TextButton(onClick = { 
@@ -822,7 +858,10 @@ fun ActiveExamScreen(url: String, onFinishExam: () -> Unit) {
     if (showSettingsDialog) {
         AlertDialog(
             onDismissRequest = { showSettingsDialog = false },
-            title = { Text("⚙️ Pengaturan Running Text Nama") },
+            title = {
+                SecureExamDialogFlag()
+                Text("⚙️ Pengaturan Running Text Nama")
+            },
             text = {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     Text("Nama Siswa (Running Text):", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
@@ -879,7 +918,10 @@ fun ActiveExamScreen(url: String, onFinishExam: () -> Unit) {
     if (MainActivity.showWarningDialog) {
         AlertDialog(
             onDismissRequest = { /* forces student to click button */ },
-            title = { Text("⚠️ Peringatan Pelanggaran (Ke-${MainActivity.violationCount})") },
+            title = {
+                SecureExamDialogFlag()
+                Text("⚠️ Peringatan Pelanggaran (Ke-${MainActivity.violationCount})")
+            },
             text = { 
                 Text(
                     "Anda terdeteksi keluar dari aplikasi atau mencoba melakukan kecurangan!\n\n" +
