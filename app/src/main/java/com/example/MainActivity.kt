@@ -79,6 +79,7 @@ class MainActivity : ComponentActivity() {
 
     private var tts: TextToSpeech? = null
     private var isTtsInitialized = false
+    private var shouldSpeakWelcomeOnResume = false
     private val pendingSpeechQueue = java.util.Collections.synchronizedList(mutableListOf<Pair<String, Int>>())
 
     companion object {
@@ -132,8 +133,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         
         instance = this
+        shouldSpeakWelcomeOnResume = false
         
-        // Initialize Text-to-Speech (TTS) engine with robust multi-vendor support
+        // Initialize Text-to-Speech (TTS) engine immediately for fast welcome speech
         try {
             tts = TextToSpeech(this) { status ->
                 if (status == TextToSpeech.SUCCESS) {
@@ -170,13 +172,12 @@ class MainActivity : ComponentActivity() {
 
                     try {
                         tts?.setPitch(1.0f)
-                        tts?.setSpeechRate(1.0f)
+                        tts?.setSpeechRate(1.25f)
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
 
                     isTtsInitialized = true
-                    forceMaxVolume()
 
                     // Drain queued speeches once TTS is initialized
                     synchronized(pendingSpeechQueue) {
@@ -194,7 +195,7 @@ class MainActivity : ComponentActivity() {
             e.printStackTrace()
         }
 
-        // Add default welcome speech
+        // Queue default welcome speech right away
         speak("Selamat datang", TextToSpeech.QUEUE_FLUSH)
         
         // Note: FLAG_SECURE is applied only when entering ActiveExamScreen so the main menu renders normally in Preview
@@ -214,7 +215,6 @@ class MainActivity : ComponentActivity() {
     fun speak(text: String, queueMode: Int = TextToSpeech.QUEUE_FLUSH) {
         if (text.isBlank()) return
         if (isTtsInitialized) {
-            forceMaxVolume()
             speakInternal(text, queueMode)
         } else {
             synchronized(pendingSpeechQueue) {
@@ -229,9 +229,6 @@ class MainActivity : ComponentActivity() {
     private fun speakInternal(text: String, queueMode: Int) {
         try {
             forceMaxVolume()
-            if (queueMode == TextToSpeech.QUEUE_FLUSH) {
-                tts?.stop()
-            }
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
                 val params = android.os.Bundle()
                 params.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC)
@@ -268,6 +265,25 @@ class MainActivity : ComponentActivity() {
         }
         if (instance == this) {
             instance = null
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (shouldSpeakWelcomeOnResume && !isExamActive) {
+            shouldSpeakWelcomeOnResume = false
+            window.decorView.post {
+                if (!isExamActive) {
+                    speak("Selamat datang", TextToSpeech.QUEUE_FLUSH)
+                }
+            }
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isExamActive && !isChangingConfigurations) {
+            shouldSpeakWelcomeOnResume = true
         }
     }
 
@@ -447,7 +463,10 @@ fun SecureExamApp() {
         )
     } else {
         DashboardScreen(
-            onStartExam = { url -> examUrl = url }
+            onStartExam = { url ->
+                MainActivity.isExamActive = true
+                examUrl = url
+            }
         )
     }
 }
