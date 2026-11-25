@@ -13,11 +13,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.CacheControl
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONObject
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.net.HttpURLConnection
-import java.net.URL
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLException
 
 data class RemoteVersionInfo(
     val versionCode: Int,
@@ -52,33 +55,54 @@ class AppUpdateRepository {
         private const val PREFS_NAME = "exambro_updater_prefs"
         private const val KEY_MANIFEST_URL = "cloudflare_manifest_url"
         private const val PLACEHOLDER_DOMAIN = "DOMAIN-CLOUDFLARE-EXAMBRO-ANDA.pages.dev"
-        private const val TIMEOUT_MS = 5000
+        private const val TIMEOUT_SECONDS = 15L
+
+        private val httpClient: OkHttpClient by lazy {
+            OkHttpClient.Builder()
+                .connectTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .readTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .callTimeout(20L, TimeUnit.SECONDS)
+                .followRedirects(true)
+                .followSslRedirects(true)
+                .retryOnConnectionFailure(true)
+                .build()
+        }
+    }
+
+    private fun isPlaceholderUrl(url: String): Boolean {
+        return url.isBlank() ||
+            url.contains(PLACEHOLDER_DOMAIN, ignoreCase = true) ||
+            url.contains("your-project.pages.dev", ignoreCase = true) ||
+            url.contains("your-subdomain.workers.dev", ignoreCase = true)
     }
 
     fun getManifestUrl(context: Context): String {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val saved = prefs.getString(KEY_MANIFEST_URL, null)?.trim()
-        if (!saved.isNullOrBlank()) return saved
+        if (!saved.isNullOrBlank() && !isPlaceholderUrl(saved)) {
+            return saved
+        }
         return context.getString(R.string.cloudflare_update_url).trim()
     }
 
     fun saveManifestUrl(context: Context, rawUrl: String): String {
         val normalized = normalizeManifestUrl(rawUrl)
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().putString(KEY_MANIFEST_URL, normalized).apply()
+        if (normalized.isBlank() || isPlaceholderUrl(normalized)) {
+            prefs.edit().remove(KEY_MANIFEST_URL).apply()
+        } else {
+            prefs.edit().putString(KEY_MANIFEST_URL, normalized).apply()
+        }
         return normalized
     }
 
     fun isConfigured(context: Context): Boolean {
         val url = getManifestUrl(context)
-        return url.startsWith("https://", ignoreCase = true) &&
-            !url.contains(PLACEHOLDER_DOMAIN, ignoreCase = true) &&
-            !url.contains("your-project.pages.dev", ignoreCase = true) &&
-            !url.contains("your-subdomain.workers.dev", ignoreCase = true)
+        return url.startsWith("https://", ignoreCase = true) && !isPlaceholderUrl(url)
     }
 
     fun normalizeManifestUrl(rawUrl: String): String {
-        var url = rawUrl.trim()
+        var url = rawUrl.trim().replace(" ", "")
         if (url.isEmpty()) return ""
         if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) {
             url = "https://$url"
@@ -89,81 +113,79 @@ class AppUpdateRepository {
 
     suspend fun checkAppUpdate(context: Context): UpdateCheckOutcome = withContext(Dispatchers.IO) {
         val baseManifestUrl = getManifestUrl(context)
-        if (baseManifestUrl.isBlank() ||
-            baseManifestUrl.contains(PLACEHOLDER_DOMAIN, ignoreCase = true) ||
-            baseManifestUrl.contains("your-project.pages.dev", ignoreCase = true) ||
-            baseManifestUrl.contains("your-subdomain.workers.dev", ignoreCase = true)
-        ) {
+        if (isPlaceholderUrl(baseManifestUrl)) {
             return@withContext UpdateCheckOutcome.NotConfigured
         }
 
-        var connection: HttpURLConnection? = null
         try {
             val separator = if (baseManifestUrl.contains("?")) "&" else "?"
             val requestUrl = "$baseManifestUrl${separator}t=${System.currentTimeMillis()}"
-            val url = URL(requestUrl)
-            connection = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = TIMEOUT_MS
-                readTimeout = TIMEOUT_MS
-                useCaches = false
-                instanceFollowRedirects = true
-                setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
-                setRequestProperty("Pragma", "no-cache")
-                setRequestProperty("Expires", "0")
-            }
+            val request = Request.Builder()
+                .url(requestUrl)
+                .get()
+                .cacheControl(CacheControl.FORCE_NETWORK)
+                .header("Cache-Control", "no-cache, no-store, must-revalidate")
+                .header("Pragma", "no-cache")
+                .header("User-Agent", "Exambro-Android/${BuildConfig.VERSION_NAME}")
+                .build()
 
-            val responseCode = connection.responseCode
-            if (responseCode !in 200..299) {
-                return@withContext UpdateCheckOutcome.Failure(
-                    "Server update merespons kode $responseCode. Coba lagi nanti."
-                )
-            }
-
-            val responseText = BufferedReader(InputStreamReader(connection.inputStream)).use { reader ->
-                reader.readText()
-            }
-            if (responseText.isBlank()) {
-                return@withContext UpdateCheckOutcome.Failure("Data versi kosong dari Cloudflare Pages.")
-            }
-
-            val json = JSONObject(responseText)
-            val serverVersionCode = json.optInt("versionCode", 0)
-            val serverVersionName = json.optString("versionName", serverVersionCode.toString())
-            var apkUrl = json.optString("apkUrl", "").trim()
-            val releaseNotes = json.optString("releaseNotes", "Pembaruan aplikasi Exambro.")
-
-            if (apkUrl.isBlank()) {
-                apkUrl = resolveRelativeApkUrl(baseManifestUrl, "exambro-release.apk")
-            } else if (apkUrl.startsWith("/")) {
-                apkUrl = resolveRelativeApkUrl(baseManifestUrl, apkUrl.removePrefix("/"))
-            }
-
-            if (serverVersionCode <= 0) {
-                return@withContext UpdateCheckOutcome.Failure("Format version.json tidak valid.")
-            }
-
-            if (serverVersionCode > BuildConfig.VERSION_CODE) {
-                UpdateCheckOutcome.UpdateAvailable(
-                    RemoteVersionInfo(
-                        versionCode = serverVersionCode,
-                        versionName = serverVersionName,
-                        apkUrl = apkUrl,
-                        releaseNotes = releaseNotes
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    return@withContext UpdateCheckOutcome.Failure(
+                        "Server update merespons kode ${response.code}. Coba lagi nanti."
                     )
-                )
-            } else {
-                UpdateCheckOutcome.UpToDate(serverVersionName = serverVersionName)
+                }
+
+                val responseText = response.body?.string().orEmpty()
+                if (responseText.isBlank()) {
+                    return@withContext UpdateCheckOutcome.Failure("Data versi kosong dari Cloudflare Pages.")
+                }
+
+                val json = JSONObject(responseText)
+                val serverVersionCode = json.optInt("versionCode", 0)
+                val serverVersionName = json.optString("versionName", serverVersionCode.toString())
+                var apkUrl = json.optString("apkUrl", "").trim()
+                val releaseNotes = json.optString("releaseNotes", "Pembaruan aplikasi Exambro.")
+
+                if (apkUrl.isBlank()) {
+                    apkUrl = resolveRelativeApkUrl(baseManifestUrl, "exambro-release.apk")
+                } else if (apkUrl.startsWith("/")) {
+                    apkUrl = resolveRelativeApkUrl(baseManifestUrl, apkUrl.removePrefix("/"))
+                }
+
+                if (serverVersionCode <= 0) {
+                    return@withContext UpdateCheckOutcome.Failure("Format version.json tidak valid.")
+                }
+
+                if (serverVersionCode > BuildConfig.VERSION_CODE) {
+                    UpdateCheckOutcome.UpdateAvailable(
+                        RemoteVersionInfo(
+                            versionCode = serverVersionCode,
+                            versionName = serverVersionName,
+                            apkUrl = apkUrl,
+                            releaseNotes = releaseNotes
+                        )
+                    )
+                } else {
+                    UpdateCheckOutcome.UpToDate(serverVersionName = serverVersionName)
+                }
             }
+        } catch (_: SocketTimeoutException) {
+            UpdateCheckOutcome.Failure(
+                "Koneksi ke server update terlalu lama (timeout 15 detik). Coba lagi."
+            )
+        } catch (_: UnknownHostException) {
+            UpdateCheckOutcome.Failure(
+                "Alamat server update tidak terjangkau (offline atau DNS bermasalah)."
+            )
+        } catch (e: SSLException) {
+            UpdateCheckOutcome.Failure(
+                "Koneksi HTTPS ke server update gagal (${e.localizedMessage ?: "SSL error"})."
+            )
         } catch (e: Exception) {
             UpdateCheckOutcome.Failure(
-                "Tidak dapat memeriksa pembaruan (offline atau koneksi lambat)."
+                "Gagal memeriksa pembaruan (${e.javaClass.simpleName}: ${e.localizedMessage ?: "cek koneksi"})."
             )
-        } finally {
-            try {
-                connection?.disconnect()
-            } catch (_: Exception) {
-            }
         }
     }
 
