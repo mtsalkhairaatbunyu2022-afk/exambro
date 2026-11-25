@@ -92,8 +92,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.journeyapps.barcodescanner.ScanContract
-import com.journeyapps.barcodescanner.ScanOptions
 
 data class DeviceCheckSnapshot(
     val isConnected: Boolean,
@@ -182,13 +180,35 @@ fun DashboardScreen(
         }
     }
 
-    val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
-        if (result.contents != null) {
-            var url = result.contents.trim()
-            if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) {
-                url = "http://$url"
-            }
-            if (url.startsWith("http://") || url.startsWith("https://")) {
+    var showQrScanner by remember { mutableStateOf(false) }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            showQrScanner = true
+        } else {
+            Toast.makeText(context, "Izin kamera diperlukan untuk scan QR Code.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun launchQrScanner() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            showQrScanner = true
+        } else {
+            permissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        deviceSnapshot = readDeviceCheckSnapshot(context)
+        updateViewModel.triggerAutoCheckIfNeeded()
+    }
+
+    if (showQrScanner) {
+        QrScannerScreen(
+            onQrCodeScanned = { scannedUrl ->
+                showQrScanner = false
                 try {
                     val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
                     val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
@@ -198,46 +218,13 @@ fun DashboardScreen(
                 } catch (_: Exception) {
                 }
                 Toast.makeText(context, "Berhasil dipindai! Membuka halaman ujian...", Toast.LENGTH_SHORT).show()
-                onStartExam(url)
-            } else {
-                Toast.makeText(context, "QR Code tidak valid: Format link salah", Toast.LENGTH_LONG).show()
+                onStartExam(scannedUrl)
+            },
+            onClose = {
+                showQrScanner = false
             }
-        }
-    }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            val options = ScanOptions().apply {
-                setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                setPrompt("Arahkan kamera ke QR Code Server Ujian")
-                setBeepEnabled(true)
-                setOrientationLocked(false)
-            }
-            scanLauncher.launch(options)
-        } else {
-            Toast.makeText(context, "Izin kamera diperlukan untuk scan QR Code.", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    fun launchQrScanner() {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-            val options = ScanOptions().apply {
-                setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                setPrompt("Arahkan kamera ke QR Code Server Ujian")
-                setBeepEnabled(true)
-                setOrientationLocked(false)
-            }
-            scanLauncher.launch(options)
-        } else {
-            permissionLauncher.launch(Manifest.permission.CAMERA)
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        deviceSnapshot = readDeviceCheckSnapshot(context)
-        updateViewModel.triggerAutoCheckIfNeeded()
+        )
+        return
     }
 
     // Dialog 1: Input Link / Token Ujian
