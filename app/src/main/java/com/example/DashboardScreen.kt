@@ -13,6 +13,12 @@ import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -82,6 +88,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -800,20 +807,30 @@ fun DashboardScreen(
                             }
                         }
 
-                        if (updateState.hasUpdate) {
-                            Text(
-                                text = "PEMBAHARUAN TERSEDIA",
-                                fontFamily = FontFamily(Font(R.font.times)),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.error,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 6.dp)
-                                    .testTag("update_available_text")
-                            )
-                        }
+                        val infiniteTransition = rememberInfiniteTransition(label = "update_blink")
+                        val alpha by infiniteTransition.animateFloat(
+                            initialValue = 1f,
+                            targetValue = 0.2f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(durationMillis = 600, easing = LinearEasing),
+                                repeatMode = RepeatMode.Reverse
+                            ),
+                            label = "alpha_blink"
+                        )
+
+                        Text(
+                            text = if (updateState.hasUpdate) "PEMBAHARUAN TERSEDIA" else "Aplikasi Sudah Versi Terbaru",
+                            fontFamily = FontFamily(Font(R.font.times)),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (updateState.hasUpdate) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 6.dp)
+                                .graphicsLayer(alpha = if (updateState.hasUpdate) alpha else 1f)
+                                .testTag("update_status_text")
+                        )
                     }
                 }
             }
