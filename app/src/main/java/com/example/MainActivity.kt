@@ -82,9 +82,13 @@ class MainActivity : ComponentActivity() {
     private var isTtsInitializing = false
     private var hasRetriedGoogleEngine = false
     private var ttsRecoveryCount = 0
+    private var welcomeRetryCount = 0
+    private var hasPlayedWelcomeThisSession = false
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val pendingSpeechQueue = java.util.Collections.synchronizedList(mutableListOf<Pair<String, Int>>())
 
     companion object {
+        private const val KEY_WELCOME_PLAYED = "key_welcome_played"
         var isExamActive by mutableStateOf(false)
         var isExamDialogOpen by mutableStateOf(false)
         var violationCount by mutableStateOf(0)
@@ -200,20 +204,46 @@ class MainActivity : ComponentActivity() {
                     e.printStackTrace()
                 }
 
+                try {
+                    tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                        override fun onStart(utteranceId: String?) {}
+                        override fun onDone(utteranceId: String?) {}
+                        @Deprecated("Deprecated in Java")
+                        override fun onError(utteranceId: String?) {
+                            handleWelcomeUtteranceError(utteranceId)
+                        }
+                        override fun onError(utteranceId: String?, errorCode: Int) {
+                            handleWelcomeUtteranceError(utteranceId)
+                        }
+                    })
+                } catch (_: Exception) {
+                }
+
                 isTtsInitialized = true
 
-                // Drain queued speeches once TTS is initialized
-                val speechesToRun = synchronized(pendingSpeechQueue) {
-                    val copy = pendingSpeechQueue.toList()
-                    pendingSpeechQueue.clear()
-                    copy
-                }
-                for ((speechText, mode) in speechesToRun) {
-                    speakInternal(speechText, mode)
+                mainHandler.post {
+                    // Drain queued violation/other speeches once TTS is initialized
+                    val speechesToRun = synchronized(pendingSpeechQueue) {
+                        val copy = pendingSpeechQueue.toList()
+                        pendingSpeechQueue.clear()
+                        copy
+                    }
+                    for ((speechText, mode) in speechesToRun) {
+                        speakInternal(speechText, mode)
+                    }
+
+                    // If initial welcome hasn't played yet in this session, trigger once warm
+                    if (!hasPlayedWelcomeThisSession && !isExamActive) {
+                        mainHandler.postDelayed({
+                            tryPlayWelcomeGreeting()
+                        }, 250L)
+                    }
                 }
             } else if (!hasRetriedGoogleEngine) {
                 hasRetriedGoogleEngine = true
-                initTts(forceRecreate = true, preferredEngine = "com.google.android.tts")
+                mainHandler.post {
+                    initTts(forceRecreate = true, preferredEngine = "com.google.android.tts")
+                }
             }
         }
 
@@ -229,21 +259,42 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun handleWelcomeUtteranceError(utteranceId: String?) {
+        if (utteranceId?.startsWith("ExambroWelcome_") == true && welcomeRetryCount < 1) {
+            welcomeRetryCount++
+            hasPlayedWelcomeThisSession = false
+            mainHandler.postDelayed({
+                if (!isExamActive && !isFinishing && !isDestroyed) {
+                    initTts(forceRecreate = true)
+                }
+            }, 300L)
+        }
+    }
+
+    private fun tryPlayWelcomeGreeting() {
+        if (hasPlayedWelcomeThisSession || isExamActive || isFinishing || isDestroyed) return
+        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return
+
+        if (isTtsInitialized && tts != null) {
+            hasPlayedWelcomeThisSession = true
+            speakInternal("Selamat datang", TextToSpeech.QUEUE_FLUSH, "ExambroWelcome_${System.currentTimeMillis()}")
+        } else if (!isTtsInitializing) {
+            initTts(forceRecreate = true)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
+
         instance = this
         ttsRecoveryCount = 0
+        hasPlayedWelcomeThisSession = savedInstanceState?.getBoolean(KEY_WELCOME_PLAYED, false) ?: false
 
-        // Queue welcome speech only when the app is freshly launched, then initialize TTS
         synchronized(pendingSpeechQueue) {
             pendingSpeechQueue.clear()
-            if (savedInstanceState == null) {
-                pendingSpeechQueue.add(Pair("Selamat datang", TextToSpeech.QUEUE_FLUSH))
-            }
         }
         initTts(forceRecreate = true)
-        
+
         // Note: FLAG_SECURE is applied only when entering ActiveExamScreen so the main menu renders normally in Preview
         enableEdgeToEdge()
         setContent {
@@ -255,6 +306,20 @@ class MainActivity : ComponentActivity() {
                     SecureExamApp()
                 }
             }
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(KEY_WELCOME_PLAYED, hasPlayedWelcomeThisSession)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!hasPlayedWelcomeThisSession && !isExamActive) {
+            mainHandler.postDelayed({
+                tryPlayWelcomeGreeting()
+            }, 400L)
         }
     }
 
@@ -270,19 +335,29 @@ class MainActivity : ComponentActivity() {
                 pendingSpeechQueue.add(Pair(text, queueMode))
             }
             if (!isTtsInitializing) {
-                initTts(forceRecreate = true)
+                mainHandler.post {
+                    initTts(forceRecreate = true)
+                }
             }
         }
     }
 
-    private fun speakInternal(text: String, queueMode: Int) {
+    private fun speakInternal(
+        text: String,
+        queueMode: Int,
+        utteranceId: String = "ExambroTTS_${System.currentTimeMillis()}"
+    ) {
+        if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
+            mainHandler.post { speakInternal(text, queueMode, utteranceId) }
+            return
+        }
         try {
             forceMaxVolume()
             val result = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
                 val params = android.os.Bundle()
                 params.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC)
                 params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
-                tts?.speak(text, queueMode, params, "ExambroTTS_${System.currentTimeMillis()}") ?: TextToSpeech.ERROR
+                tts?.speak(text, queueMode, params, utteranceId) ?: TextToSpeech.ERROR
             } else {
                 @Suppress("DEPRECATION")
                 val params = HashMap<String, String>()
@@ -294,9 +369,13 @@ class MainActivity : ComponentActivity() {
 
             if (result != TextToSpeech.SUCCESS && ttsRecoveryCount < 2) {
                 ttsRecoveryCount++
-                synchronized(pendingSpeechQueue) {
-                    pendingSpeechQueue.clear()
-                    pendingSpeechQueue.add(Pair(text, queueMode))
+                if (utteranceId.startsWith("ExambroWelcome_")) {
+                    hasPlayedWelcomeThisSession = false
+                } else {
+                    synchronized(pendingSpeechQueue) {
+                        pendingSpeechQueue.clear()
+                        pendingSpeechQueue.add(Pair(text, queueMode))
+                    }
                 }
                 initTts(forceRecreate = true)
             }
@@ -314,6 +393,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacksAndMessages(null)
         super.onDestroy()
         try {
             tts?.stop()
