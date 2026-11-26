@@ -272,6 +272,7 @@ class AppUpdateViewModel(application: Application) : AndroidViewModel(applicatio
         } else {
             UpdateNotificationHelper.cancelUpdateNotification(application)
         }
+        triggerAutoCheckIfNeeded(force = true)
     }
 
     fun triggerAutoCheckIfNeeded(force: Boolean = false) {
