@@ -359,6 +359,11 @@ class MainActivity : ComponentActivity() {
         outState.putBoolean(KEY_WELCOME_CONFIG_CHANGE, isChangingConfigurations)
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+    }
+
     override fun onRestart() {
         super.onRestart()
         if (!isExamActive) {

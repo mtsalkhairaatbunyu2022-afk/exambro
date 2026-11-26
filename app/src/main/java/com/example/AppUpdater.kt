@@ -54,6 +54,10 @@ class AppUpdateRepository {
     companion object {
         private const val PREFS_NAME = "exambro_updater_prefs"
         private const val KEY_MANIFEST_URL = "cloudflare_manifest_url"
+        private const val KEY_SAVED_UPDATE_CODE = "saved_update_code"
+        private const val KEY_SAVED_UPDATE_NAME = "saved_update_name"
+        private const val KEY_SAVED_UPDATE_APK = "saved_update_apk"
+        private const val KEY_SAVED_UPDATE_NOTES = "saved_update_notes"
         private const val PLACEHOLDER_DOMAIN = "DOMAIN-CLOUDFLARE-EXAMBRO-ANDA.pages.dev"
         private const val TIMEOUT_SECONDS = 15L
 
@@ -94,6 +98,48 @@ class AppUpdateRepository {
             prefs.edit().putString(KEY_MANIFEST_URL, normalized).apply()
         }
         return normalized
+    }
+
+    fun savePendingUpdate(context: Context, info: RemoteVersionInfo) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .putInt(KEY_SAVED_UPDATE_CODE, info.versionCode)
+            .putString(KEY_SAVED_UPDATE_NAME, info.versionName)
+            .putString(KEY_SAVED_UPDATE_APK, info.apkUrl)
+            .putString(KEY_SAVED_UPDATE_NOTES, info.releaseNotes)
+            .apply()
+    }
+
+    fun clearPendingUpdate(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .remove(KEY_SAVED_UPDATE_CODE)
+            .remove(KEY_SAVED_UPDATE_NAME)
+            .remove(KEY_SAVED_UPDATE_APK)
+            .remove(KEY_SAVED_UPDATE_NOTES)
+            .apply()
+    }
+
+    fun getSavedPendingUpdate(context: Context): RemoteVersionInfo? {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val code = prefs.getInt(KEY_SAVED_UPDATE_CODE, 0)
+        return if (code > BuildConfig.VERSION_CODE) {
+            val name = prefs.getString(KEY_SAVED_UPDATE_NAME, code.toString()) ?: code.toString()
+            val apk = prefs.getString(KEY_SAVED_UPDATE_APK, "") ?: ""
+            val notes = prefs.getString(KEY_SAVED_UPDATE_NOTES, "") ?: ""
+            RemoteVersionInfo(
+                versionCode = code,
+                versionName = name,
+                apkUrl = apk,
+                releaseNotes = notes
+            )
+        } else {
+            if (code > 0) {
+                clearPendingUpdate(context)
+                UpdateNotificationHelper.cancelUpdateNotification(context)
+            }
+            null
+        }
     }
 
     fun isConfigured(context: Context): Boolean {
@@ -158,15 +204,18 @@ class AppUpdateRepository {
                 }
 
                 if (serverVersionCode > BuildConfig.VERSION_CODE) {
-                    UpdateCheckOutcome.UpdateAvailable(
-                        RemoteVersionInfo(
-                            versionCode = serverVersionCode,
-                            versionName = serverVersionName,
-                            apkUrl = apkUrl,
-                            releaseNotes = releaseNotes
-                        )
+                    val info = RemoteVersionInfo(
+                        versionCode = serverVersionCode,
+                        versionName = serverVersionName,
+                        apkUrl = apkUrl,
+                        releaseNotes = releaseNotes
                     )
+                    savePendingUpdate(context, info)
+                    UpdateNotificationHelper.showUpdateNotification(context, info)
+                    UpdateCheckOutcome.UpdateAvailable(info)
                 } else {
+                    clearPendingUpdate(context)
+                    UpdateNotificationHelper.cancelUpdateNotification(context)
                     UpdateCheckOutcome.UpToDate(serverVersionName = serverVersionName)
                 }
             }
@@ -207,11 +256,29 @@ class AppUpdateViewModel(application: Application) : AndroidViewModel(applicatio
     private val _uiState = MutableStateFlow(AppUpdateUiState())
     val uiState: StateFlow<AppUpdateUiState> = _uiState.asStateFlow()
 
-    private var hasPerformedInitialAutoCheck = false
+    private var lastAutoCheckMs = 0L
 
-    fun triggerAutoCheckIfNeeded() {
-        if (hasPerformedInitialAutoCheck || MainActivity.isExamActive) return
-        hasPerformedInitialAutoCheck = true
+    init {
+        val savedPending = repository.getSavedPendingUpdate(application)
+        if (savedPending != null) {
+            _uiState.update {
+                it.copy(
+                    hasUpdate = true,
+                    remoteInfo = savedPending,
+                    statusMessage = "Versi baru v${savedPending.versionName} tersedia!"
+                )
+            }
+            UpdateNotificationHelper.showUpdateNotification(application, savedPending)
+        } else {
+            UpdateNotificationHelper.cancelUpdateNotification(application)
+        }
+    }
+
+    fun triggerAutoCheckIfNeeded(force: Boolean = false) {
+        if (MainActivity.isExamActive) return
+        val now = System.currentTimeMillis()
+        if (!force && now - lastAutoCheckMs < 60_000L) return
+        lastAutoCheckMs = now
         if (repository.isConfigured(getApplication())) {
             checkAppUpdate(isManual = false)
         }
@@ -293,6 +360,16 @@ class AppUpdateViewModel(application: Application) : AndroidViewModel(applicatio
                 showUpToDateDialog = false,
                 showNotConfiguredDialog = false
             )
+        }
+    }
+
+    fun showUpdateDialog() {
+        _uiState.update {
+            if (it.hasUpdate && it.remoteInfo != null) {
+                it.copy(showUpdateDialog = true)
+            } else {
+                it
+            }
         }
     }
 

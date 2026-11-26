@@ -1,6 +1,7 @@
 package com.example
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioManager
@@ -8,9 +9,11 @@ import android.media.ToneGenerator
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.BatteryManager
+import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -40,6 +43,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
@@ -50,6 +54,7 @@ import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -192,6 +197,14 @@ fun DashboardScreen(
         }
     }
 
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted && updateState.hasUpdate && updateState.remoteInfo != null) {
+            UpdateNotificationHelper.showUpdateNotification(context, updateState.remoteInfo!!)
+        }
+    }
+
     fun launchQrScanner() {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             showQrScanner = true
@@ -201,8 +214,28 @@ fun DashboardScreen(
     }
 
     LaunchedEffect(Unit) {
+        val activity = context as? Activity
+        val shouldShowFromNotification = activity?.intent?.getBooleanExtra("SHOW_UPDATE_DIALOG", false) == true
+        if (shouldShowFromNotification) {
+            activity?.intent?.removeExtra("SHOW_UPDATE_DIALOG")
+            updateViewModel.showUpdateDialog()
+        }
         deviceSnapshot = readDeviceCheckSnapshot(context)
         updateViewModel.triggerAutoCheckIfNeeded()
+    }
+
+    LaunchedEffect(updateState.hasUpdate, updateState.remoteInfo) {
+        if (updateState.hasUpdate && updateState.remoteInfo != null) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                } else {
+                    UpdateNotificationHelper.showUpdateNotification(context, updateState.remoteInfo!!)
+                }
+            } else {
+                UpdateNotificationHelper.showUpdateNotification(context, updateState.remoteInfo!!)
+            }
+        }
     }
 
     if (showQrScanner) {
@@ -584,6 +617,22 @@ fun DashboardScreen(
 
                 // Running Text 3D "CBT MTs Bunyu"
                 RunningText3D()
+
+                // Notifikasi Banner Pembaruan Persisten (muncul di HP siswa sampai aplikasi selesai di-update)
+                if (updateState.hasUpdate && updateState.remoteInfo != null) {
+                    PersistentUpdateNotificationBanner(
+                        remote = updateState.remoteInfo!!,
+                        onUpdateClick = {
+                            val opened = updateViewModel.openApkDownloadUrl(context, updateState.remoteInfo!!.apkUrl)
+                            if (!opened) {
+                                Toast.makeText(context, "Tidak dapat membuka tautan pembaruan.", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        onDetailClick = {
+                            updateViewModel.showUpdateDialog()
+                        }
+                    )
+                }
 
                 // 2. Judul Seksi Menu Utama
                 Row(
@@ -1005,5 +1054,146 @@ private fun GuideRuleItem(number: String, text: String) {
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f)
         )
+    }
+}
+
+@Composable
+private fun PersistentUpdateNotificationBanner(
+    remote: RemoteVersionInfo,
+    onUpdateClick: () -> Unit,
+    onDetailClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("persistent_update_notification_banner"),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.95f)
+        ),
+        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.error)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Filled.NotificationsActive,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onError,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.error
+                        ) {
+                            Text(
+                                text = "PENTING",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Black,
+                                color = MaterialTheme.colorScheme.onError,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                        Text(
+                            text = "Pembaruan Tersedia!",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                    Text(
+                        text = "Versi Terbaru: v${remote.versionName} (Build ${remote.versionCode})",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f)
+                    )
+                }
+            }
+
+            Text(
+                text = "Pembaruan aplikasi telah dirilis untuk seluruh siswa. Notifikasi ini akan tetap aktif di HP Anda sampai aplikasi berhasil diperbarui ke versi terbaru.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                lineHeight = 18.sp
+            )
+
+            if (remote.releaseNotes.isNotBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Catatan: ${remote.releaseNotes}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(8.dp),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = onUpdateClick,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp)
+                        .testTag("banner_update_now_button"),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.SystemUpdate,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Perbarui Sekarang", fontWeight = FontWeight.Bold)
+                }
+
+                OutlinedButton(
+                    onClick = onDetailClick,
+                    modifier = Modifier
+                        .height(44.dp)
+                        .testTag("banner_view_detail_button"),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                    ),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Detail", fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
     }
 }
