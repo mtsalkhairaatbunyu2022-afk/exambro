@@ -88,7 +88,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -624,22 +627,6 @@ fun DashboardScreen(
                 // Running Text 3D "CBT MTs Bunyu"
                 RunningText3D()
 
-                // Notifikasi Banner Pembaruan Persisten (muncul di HP siswa sampai aplikasi selesai di-update)
-                if (updateState.hasUpdate && updateState.remoteInfo != null) {
-                    PersistentUpdateNotificationBanner(
-                        remote = updateState.remoteInfo!!,
-                        onUpdateClick = {
-                            val opened = updateViewModel.openApkDownloadUrl(context, updateState.remoteInfo!!.apkUrl)
-                            if (!opened) {
-                                Toast.makeText(context, "Tidak dapat membuka tautan pembaruan.", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        onDetailClick = {
-                            updateViewModel.showUpdateDialog()
-                        }
-                    )
-                }
-
                 // 2. Judul Seksi Menu Utama
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -812,6 +799,21 @@ fun DashboardScreen(
                                 Text("Cek Update", fontWeight = FontWeight.Bold)
                             }
                         }
+
+                        if (updateState.hasUpdate) {
+                            Text(
+                                text = "PEMBAHARUAN TERSEDIA",
+                                fontFamily = FontFamily(Font(R.font.times)),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.error,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 6.dp)
+                                    .testTag("update_available_text")
+                            )
+                        }
                     }
                 }
             }
@@ -867,64 +869,50 @@ private fun SchoolIdentityBanner(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // Logo MTs Alkhairaat Bunyu (Ujung Kiri Aplikasi)
+                Surface(
+                    modifier = Modifier.size(54.dp),
+                    shape = CircleShape,
+                    color = Color.White,
+                    shadowElevation = 4.dp
                 ) {
-                    // Logo Kementerian Agama RI
-                    Surface(
-                        modifier = Modifier.size(52.dp),
-                        shape = CircleShape,
-                        color = Color.White,
-                        shadowElevation = 3.dp
-                    ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.ic_kemenag),
-                            contentDescription = "Logo Kementerian Agama RI",
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(5.dp)
-                        )
-                    }
-
-                    // Logo MTs Alkhairaat Bunyu
-                    Surface(
-                        modifier = Modifier.size(52.dp),
-                        shape = CircleShape,
-                        color = Color.White,
-                        shadowElevation = 3.dp
-                    ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.logo_alkhairaat),
-                            contentDescription = "Logo MTs Alkhairaat Bunyu",
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(5.dp)
-                        )
-                    }
+                    Image(
+                        painter = painterResource(id = R.drawable.logo_alkhairaat),
+                        contentDescription = "Logo MTs Alkhairaat Bunyu",
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(5.dp)
+                    )
                 }
 
+                // Informasi Identitas Sekolah (Bagian Tengah - Rata Tengah)
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
                     Text(
-                        text = "KEMENAG RI • MTs ALKHAIRAAT BUNYU",
+                        text = "KEMENAG • MTs ALKHAIRAAT",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.6.sp,
-                        color = Color(0xFFB8F1C7)
+                        letterSpacing = 0.5.sp,
+                        color = Color(0xFFB8F1C7),
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = "Exambro CBT",
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.ExtraBold,
-                        color = Color.White
+                        color = Color.White,
+                        textAlign = TextAlign.Center
                     )
                     Text(
-                        text = "Browser Ujian Aman & Terkendali",
+                        text = "Browser Ujian Aman",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.88f)
+                        color = Color.White.copy(alpha = 0.88f),
+                        textAlign = TextAlign.Center
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Surface(
@@ -932,15 +920,15 @@ private fun SchoolIdentityBanner(
                         color = Color.White.copy(alpha = 0.16f)
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
                         ) {
                             Icon(
                                 imageVector = if (isOnline) Icons.Filled.Wifi else Icons.Filled.WifiOff,
                                 contentDescription = null,
                                 tint = if (isOnline) Color(0xFFA5F39C) else Color(0xFFFFCC80),
-                                modifier = Modifier.size(14.dp)
+                                modifier = Modifier.size(13.dp)
                             )
                             Text(
                                 text = connectionText,
@@ -950,6 +938,22 @@ private fun SchoolIdentityBanner(
                             )
                         }
                     }
+                }
+
+                // Logo Kemenag RI (Ujung Kanan)
+                Surface(
+                    modifier = Modifier.size(54.dp),
+                    shape = CircleShape,
+                    color = Color.White,
+                    shadowElevation = 4.dp
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.logo_kemenag),
+                        contentDescription = "Logo Kementerian Agama RI",
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(4.dp)
+                    )
                 }
             }
         }
@@ -1082,146 +1086,5 @@ private fun GuideRuleItem(number: String, text: String) {
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f)
         )
-    }
-}
-
-@Composable
-private fun PersistentUpdateNotificationBanner(
-    remote: RemoteVersionInfo,
-    onUpdateClick: () -> Unit,
-    onDetailClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("persistent_update_notification_banner"),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.95f)
-        ),
-        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.error)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Filled.NotificationsActive,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onError,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = MaterialTheme.colorScheme.error
-                        ) {
-                            Text(
-                                text = "PENTING",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Black,
-                                color = MaterialTheme.colorScheme.onError,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                        Text(
-                            text = "Pembaruan Tersedia!",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                    }
-                    Text(
-                        text = "Versi Terbaru: v${remote.versionName} (Build ${remote.versionCode})",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f)
-                    )
-                }
-            }
-
-            Text(
-                text = "Pembaruan aplikasi telah dirilis untuk seluruh siswa. Notifikasi ini akan tetap aktif di HP Anda sampai aplikasi berhasil diperbarui ke versi terbaru.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onErrorContainer,
-                lineHeight = 18.sp
-            )
-
-            if (remote.releaseNotes.isNotBlank()) {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "Catatan: ${remote.releaseNotes}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(8.dp),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(
-                    onClick = onUpdateClick,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(44.dp)
-                        .testTag("banner_update_now_button"),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError
-                    ),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.SystemUpdate,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Perbarui Sekarang", fontWeight = FontWeight.Bold)
-                }
-
-                OutlinedButton(
-                    onClick = onDetailClick,
-                    modifier = Modifier
-                        .height(44.dp)
-                        .testTag("banner_view_detail_button"),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.onErrorContainer
-                    ),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
-                ) {
-                    Text("Detail", fontWeight = FontWeight.SemiBold)
-                }
-            }
-        }
     }
 }
