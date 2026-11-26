@@ -82,7 +82,6 @@ class MainActivity : ComponentActivity() {
     private var isTtsInitializing = false
     private var hasRetriedGoogleEngine = false
     private var ttsRecoveryCount = 0
-    private var shouldSpeakWelcomeOnResume = false
     private val pendingSpeechQueue = java.util.Collections.synchronizedList(mutableListOf<Pair<String, Int>>())
 
     companion object {
@@ -205,9 +204,6 @@ class MainActivity : ComponentActivity() {
 
                 // Drain queued speeches once TTS is initialized
                 val speechesToRun = synchronized(pendingSpeechQueue) {
-                    if (pendingSpeechQueue.isEmpty()) {
-                        pendingSpeechQueue.add(Pair("Selamat datang", TextToSpeech.QUEUE_FLUSH))
-                    }
                     val copy = pendingSpeechQueue.toList()
                     pendingSpeechQueue.clear()
                     copy
@@ -237,13 +233,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         
         instance = this
-        shouldSpeakWelcomeOnResume = false
         ttsRecoveryCount = 0
 
-        // Queue default welcome speech and initialize TTS immediately
+        // Queue welcome speech only when the app is freshly launched, then initialize TTS
         synchronized(pendingSpeechQueue) {
             pendingSpeechQueue.clear()
-            pendingSpeechQueue.add(Pair("Selamat datang", TextToSpeech.QUEUE_FLUSH))
+            if (savedInstanceState == null) {
+                pendingSpeechQueue.add(Pair("Selamat datang", TextToSpeech.QUEUE_FLUSH))
+            }
         }
         initTts(forceRecreate = true)
         
@@ -329,33 +326,6 @@ class MainActivity : ComponentActivity() {
         isTtsInitializing = false
         if (instance == this) {
             instance = null
-        }
-    }
-
-    override fun onRestart() {
-        super.onRestart()
-        if (!isExamActive) {
-            shouldSpeakWelcomeOnResume = true
-        }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        if (shouldSpeakWelcomeOnResume && !isExamActive) {
-            shouldSpeakWelcomeOnResume = false
-            ttsRecoveryCount = 0
-            window.decorView.postDelayed({
-                if (!isExamActive) {
-                    speak("Selamat datang", TextToSpeech.QUEUE_FLUSH)
-                }
-            }, 120L)
-        }
-    }
-
-    override fun onStop() {
-        super.onStop()
-        if (!isExamActive && !isChangingConfigurations) {
-            shouldSpeakWelcomeOnResume = true
         }
     }
 
