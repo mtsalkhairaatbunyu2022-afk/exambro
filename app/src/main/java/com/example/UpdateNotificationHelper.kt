@@ -1,10 +1,12 @@
 package com.example
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -27,7 +29,9 @@ object UpdateNotificationHelper {
             val channel = NotificationChannel(CHANNEL_ID, name, importance).apply {
                 description = descriptionText
                 enableVibration(true)
+                enableLights(true)
                 setShowBadge(true)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             }
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
             notificationManager?.createNotificationChannel(channel)
@@ -64,13 +68,26 @@ object UpdateNotificationHelper {
         val shortContent = "Versi baru telah dirilis. Ketuk untuk memperbarui aplikasi."
         val bigText = "Aplikasi Exambro MTs Alkhairaat Bunyu versi baru v${info.versionName} (Build ${info.versionCode}) siap dipasang.\n\nCatatan:\n${info.releaseNotes}\n\nNotifikasi ini akan tetap aktif di HP Anda sampai aplikasi berhasil diperbarui."
 
+        val largeIconBitmap = try {
+            BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher)
+        } catch (_: Exception) {
+            null
+        }
+
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .apply {
+                if (largeIconBitmap != null) {
+                    setLargeIcon(largeIconBitmap)
+                }
+            }
             .setContentTitle(title)
             .setContentText(shortContent)
             .setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(true) // Waktu yang cukup lama: tidak dapat dihapus dengan swipe biasa
             .setAutoCancel(false) // Tetap aktif sampai aplikasi diperbarui
             .setContentIntent(pendingOpenApp)
@@ -87,9 +104,7 @@ object UpdateNotificationHelper {
 
         try {
             val notificationManager = NotificationManagerCompat.from(context)
-            if (notificationManager.areNotificationsEnabled()) {
-                notificationManager.notify(NOTIFICATION_ID, builder.build())
-            }
+            notificationManager.notify(NOTIFICATION_ID, builder.build())
         } catch (e: Exception) {
             e.printStackTrace()
         }

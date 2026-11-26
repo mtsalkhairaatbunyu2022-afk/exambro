@@ -277,7 +277,7 @@ class AppUpdateViewModel(application: Application) : AndroidViewModel(applicatio
     fun triggerAutoCheckIfNeeded(force: Boolean = false) {
         if (MainActivity.isExamActive) return
         val now = System.currentTimeMillis()
-        if (!force && now - lastAutoCheckMs < 60_000L) return
+        if (!force && now - lastAutoCheckMs < 15_000L) return
         lastAutoCheckMs = now
         if (repository.isConfigured(getApplication())) {
             checkAppUpdate(isManual = false)

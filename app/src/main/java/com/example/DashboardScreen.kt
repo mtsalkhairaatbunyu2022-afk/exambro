@@ -177,6 +177,7 @@ fun DashboardScreen(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 deviceSnapshot = readDeviceCheckSnapshot(context)
+                updateViewModel.triggerAutoCheckIfNeeded(force = false)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -214,6 +215,11 @@ fun DashboardScreen(
     }
 
     LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
         val activity = context as? Activity
         val shouldShowFromNotification = activity?.intent?.getBooleanExtra("SHOW_UPDATE_DIALOG", false) == true
         if (shouldShowFromNotification) {
@@ -221,7 +227,7 @@ fun DashboardScreen(
             updateViewModel.showUpdateDialog()
         }
         deviceSnapshot = readDeviceCheckSnapshot(context)
-        updateViewModel.triggerAutoCheckIfNeeded()
+        updateViewModel.triggerAutoCheckIfNeeded(force = true)
     }
 
     LaunchedEffect(updateState.hasUpdate, updateState.remoteInfo) {
