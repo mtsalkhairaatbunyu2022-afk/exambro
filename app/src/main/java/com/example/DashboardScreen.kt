@@ -867,19 +867,41 @@ private fun SchoolIdentityBanner(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Surface(
-                    modifier = Modifier.size(72.dp),
-                    shape = CircleShape,
-                    color = Color.White,
-                    shadowElevation = 4.dp
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.logo_alkhairaat),
-                        contentDescription = "Logo MTs Alkhairaat Bunyu",
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(6.dp)
-                    )
+                    // Logo Kementerian Agama RI
+                    Surface(
+                        modifier = Modifier.size(52.dp),
+                        shape = CircleShape,
+                        color = Color.White,
+                        shadowElevation = 3.dp
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_kemenag),
+                            contentDescription = "Logo Kementerian Agama RI",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(5.dp)
+                        )
+                    }
+
+                    // Logo MTs Alkhairaat Bunyu
+                    Surface(
+                        modifier = Modifier.size(52.dp),
+                        shape = CircleShape,
+                        color = Color.White,
+                        shadowElevation = 3.dp
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.logo_alkhairaat),
+                            contentDescription = "Logo MTs Alkhairaat Bunyu",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(5.dp)
+                        )
+                    }
                 }
 
                 Column(
@@ -887,10 +909,10 @@ private fun SchoolIdentityBanner(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
-                        text = "MTs ALKHAIRAAT BUNYU",
+                        text = "KEMENAG RI • MTs ALKHAIRAAT BUNYU",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.8.sp,
+                        letterSpacing = 0.6.sp,
                         color = Color(0xFFB8F1C7)
                     )
                     Text(

@@ -1,0 +1,112 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+
+    <!-- Background Circle Base -->
+    <path
+        android:fillColor="#0D5328"
+        android:pathData="M48,48m-45,0a45,45 0,1 1,90 0a45,45 0,1 1,-90 0" />
+
+    <!-- Outer Gold Ring -->
+    <path
+        android:strokeColor="#FFD54F"
+        android:strokeWidth="3"
+        android:fillColor="#00000000"
+        android:pathData="M48,48m-42,0a42,42 0,1 1,84 0a42,42 0,1 1,-84 0" />
+
+    <!-- Inner Shield (Segilima Kemenag) -->
+    <path
+        android:fillColor="#1B783E"
+        android:strokeColor="#FFE082"
+        android:strokeWidth="1.8"
+        android:pathData="M48,14 L78,36 L66,74 L30,74 L18,36 Z" />
+
+    <!-- Padi & Kapas (Left & Right Wreath - Golden Arcs) -->
+    <path
+        android:strokeColor="#FFCA28"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M24,54 C22,40 28,26 40,20" />
+    <path
+        android:strokeColor="#FFCA28"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M72,54 C74,40 68,26 56,20" />
+
+    <!-- Star at Top / Bintang Emas -->
+    <path
+        android:fillColor="#FFF59D"
+        android:pathData="M48,18 L50.2,23 L55.5,23.4 L51.4,26.8 L52.7,32 L48,29 L43.3,32 L44.6,26.8 L40.5,23.4 L45.8,23 Z" />
+
+    <!-- Timbangan Keadilan (Scale of Justice) -->
+    <!-- Center Beam -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2"
+        android:pathData="M48,29 L48,54" />
+    <!-- Horizontal Crossbar -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M34,35 L62,35" />
+    <!-- Left Scale Pan -->
+    <path
+        android:strokeColor="#FFE082"
+        android:strokeWidth="1.5"
+        android:pathData="M34,35 L30,44 M34,35 L38,44" />
+    <path
+        android:fillColor="#FFD54F"
+        android:strokeColor="#FFE082"
+        android:strokeWidth="1"
+        android:pathData="M27,44 Q34,49 41,44 Z" />
+    <!-- Right Scale Pan -->
+    <path
+        android:strokeColor="#FFE082"
+        android:strokeWidth="1.5"
+        android:pathData="M62,35 L58,44 M62,35 L66,44" />
+    <path
+        android:fillColor="#FFD54F"
+        android:strokeColor="#FFE082"
+        android:strokeWidth="1"
+        android:pathData="M55,44 Q62,49 69,44 Z" />
+
+    <!-- Kitab Suci Terbuka (Open Book at Center) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#C8E6C9"
+        android:strokeWidth="1"
+        android:pathData="M48,53 Q40,49 32,51 L32,61 Q40,59 48,63 Q56,59 64,61 L64,51 Q56,49 48,53 Z" />
+    <!-- Spine of Book -->
+    <path
+        android:strokeColor="#2E7D32"
+        android:strokeWidth="1.5"
+        android:pathData="M48,53 L48,63" />
+
+    <!-- Pita Emas Slogan "IKHLAS BERAMAL" (Bottom Ribbon) -->
+    <path
+        android:fillColor="#FFD54F"
+        android:strokeColor="#FFA000"
+        android:strokeWidth="1.2"
+        android:pathData="M24,71 Q48,66 72,71 L76,80 Q48,74 20,80 Z" />
+
+    <!-- Decorative ribbon tails -->
+    <path
+        android:fillColor="#FFC107"
+        android:pathData="M20,80 L25,75 L24,71 L16,74 Z" />
+    <path
+        android:fillColor="#FFC107"
+        android:pathData="M76,80 L71,75 L72,71 L80,74 Z" />
+
+    <!-- Simplified Emblem Text Mark (KEMENAG) -->
+    <path
+        android:strokeColor="#1B5E20"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:pathData="M36,75 L60,75" />
+
+</vector>
