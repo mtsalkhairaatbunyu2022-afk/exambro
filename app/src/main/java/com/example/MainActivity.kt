@@ -84,11 +84,14 @@ class MainActivity : ComponentActivity() {
     private var ttsRecoveryCount = 0
     private var welcomeRetryCount = 0
     private var hasPlayedWelcomeThisSession = false
+    private var isWelcomeAttemptInFlight = false
+    private var activeWelcomeUtteranceId: String? = null
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val pendingSpeechQueue = java.util.Collections.synchronizedList(mutableListOf<Pair<String, Int>>())
 
     companion object {
         private const val KEY_WELCOME_PLAYED = "key_welcome_played"
+        private const val KEY_WELCOME_CONFIG_CHANGE = "key_welcome_config_change"
         var isExamActive by mutableStateOf(false)
         var isExamDialogOpen by mutableStateOf(false)
         var violationCount by mutableStateOf(0)
@@ -206,8 +209,22 @@ class MainActivity : ComponentActivity() {
 
                 try {
                     tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
-                        override fun onStart(utteranceId: String?) {}
-                        override fun onDone(utteranceId: String?) {}
+                        override fun onStart(utteranceId: String?) {
+                            mainHandler.post {
+                                if (utteranceId != null && utteranceId == activeWelcomeUtteranceId) {
+                                    hasPlayedWelcomeThisSession = true
+                                    isWelcomeAttemptInFlight = false
+                                }
+                            }
+                        }
+                        override fun onDone(utteranceId: String?) {
+                            mainHandler.post {
+                                if (utteranceId != null && utteranceId == activeWelcomeUtteranceId) {
+                                    hasPlayedWelcomeThisSession = true
+                                    isWelcomeAttemptInFlight = false
+                                }
+                            }
+                        }
                         @Deprecated("Deprecated in Java")
                         override fun onError(utteranceId: String?) {
                             handleWelcomeUtteranceError(utteranceId)
@@ -232,7 +249,7 @@ class MainActivity : ComponentActivity() {
                         speakInternal(speechText, mode)
                     }
 
-                    // If initial welcome hasn't played yet in this session, trigger once warm
+                    // If initial welcome hasn't played yet in this session, trigger once warm & focused
                     if (!hasPlayedWelcomeThisSession && !isExamActive) {
                         mainHandler.postDelayed({
                             tryPlayWelcomeGreeting()
@@ -260,24 +277,46 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleWelcomeUtteranceError(utteranceId: String?) {
-        if (utteranceId?.startsWith("ExambroWelcome_") == true && welcomeRetryCount < 1) {
-            welcomeRetryCount++
-            hasPlayedWelcomeThisSession = false
-            mainHandler.postDelayed({
-                if (!isExamActive && !isFinishing && !isDestroyed) {
-                    initTts(forceRecreate = true)
-                }
-            }, 300L)
+        if (utteranceId != null && utteranceId == activeWelcomeUtteranceId) {
+            isWelcomeAttemptInFlight = false
+            if (welcomeRetryCount < 2) {
+                welcomeRetryCount++
+                mainHandler.postDelayed({
+                    if (!isExamActive && !isFinishing && !isDestroyed && !hasPlayedWelcomeThisSession) {
+                        initTts(forceRecreate = true, preferredEngine = "com.google.android.tts")
+                    }
+                }, 300L)
+            }
         }
     }
 
     private fun tryPlayWelcomeGreeting() {
-        if (hasPlayedWelcomeThisSession || isExamActive || isFinishing || isDestroyed) return
-        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return
+        if (hasPlayedWelcomeThisSession || isWelcomeAttemptInFlight || isExamActive || isFinishing || isDestroyed) return
+        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) || !hasWindowFocus()) return
 
         if (isTtsInitialized && tts != null) {
-            hasPlayedWelcomeThisSession = true
-            speakInternal("Selamat datang", TextToSpeech.QUEUE_FLUSH, "ExambroWelcome_${System.currentTimeMillis()}")
+            val utteranceId = "ExambroWelcome_${System.currentTimeMillis()}"
+            activeWelcomeUtteranceId = utteranceId
+            isWelcomeAttemptInFlight = true
+            speakInternal("Selamat datang", TextToSpeech.QUEUE_FLUSH, utteranceId)
+
+            mainHandler.postDelayed({
+                if (isWelcomeAttemptInFlight && activeWelcomeUtteranceId == utteranceId) {
+                    val stillSpeaking = try {
+                        tts?.isSpeaking == true
+                    } catch (_: Exception) {
+                        false
+                    }
+                    isWelcomeAttemptInFlight = false
+                    if (stillSpeaking) {
+                        hasPlayedWelcomeThisSession = true
+                    } else if (welcomeRetryCount < 2 && !isExamActive && !isFinishing && !isDestroyed) {
+                        welcomeRetryCount++
+                        val fallbackEngine = if (welcomeRetryCount == 1) "com.google.android.tts" else null
+                        initTts(forceRecreate = true, preferredEngine = fallbackEngine)
+                    }
+                }
+            }, 1800L)
         } else if (!isTtsInitializing) {
             initTts(forceRecreate = true)
         }
@@ -288,7 +327,12 @@ class MainActivity : ComponentActivity() {
 
         instance = this
         ttsRecoveryCount = 0
-        hasPlayedWelcomeThisSession = savedInstanceState?.getBoolean(KEY_WELCOME_PLAYED, false) ?: false
+        val wasConfigChange = savedInstanceState?.getBoolean(KEY_WELCOME_CONFIG_CHANGE, false) ?: false
+        hasPlayedWelcomeThisSession = if (wasConfigChange) {
+            savedInstanceState?.getBoolean(KEY_WELCOME_PLAYED, false) ?: false
+        } else {
+            false
+        }
 
         synchronized(pendingSpeechQueue) {
             pendingSpeechQueue.clear()
@@ -312,6 +356,19 @@ class MainActivity : ComponentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putBoolean(KEY_WELCOME_PLAYED, hasPlayedWelcomeThisSession)
+        outState.putBoolean(KEY_WELCOME_CONFIG_CHANGE, isChangingConfigurations)
+    }
+
+    override fun onRestart() {
+        super.onRestart()
+        if (!isExamActive) {
+            hasPlayedWelcomeThisSession = false
+            isWelcomeAttemptInFlight = false
+            welcomeRetryCount = 0
+            if (!isTtsInitialized && !isTtsInitializing) {
+                initTts(forceRecreate = true)
+            }
+        }
     }
 
     override fun onResume() {
@@ -319,7 +376,7 @@ class MainActivity : ComponentActivity() {
         if (!hasPlayedWelcomeThisSession && !isExamActive) {
             mainHandler.postDelayed({
                 tryPlayWelcomeGreeting()
-            }, 400L)
+            }, 350L)
         }
     }
 
@@ -367,17 +424,20 @@ class MainActivity : ComponentActivity() {
                 tts?.speak(text, queueMode, params) ?: TextToSpeech.ERROR
             }
 
-            if (result != TextToSpeech.SUCCESS && ttsRecoveryCount < 2) {
-                ttsRecoveryCount++
-                if (utteranceId.startsWith("ExambroWelcome_")) {
-                    hasPlayedWelcomeThisSession = false
-                } else {
-                    synchronized(pendingSpeechQueue) {
-                        pendingSpeechQueue.clear()
-                        pendingSpeechQueue.add(Pair(text, queueMode))
-                    }
+            if (result != TextToSpeech.SUCCESS) {
+                if (utteranceId == activeWelcomeUtteranceId) {
+                    isWelcomeAttemptInFlight = false
                 }
-                initTts(forceRecreate = true)
+                if (ttsRecoveryCount < 2) {
+                    ttsRecoveryCount++
+                    if (utteranceId != activeWelcomeUtteranceId) {
+                        synchronized(pendingSpeechQueue) {
+                            pendingSpeechQueue.clear()
+                            pendingSpeechQueue.add(Pair(text, queueMode))
+                        }
+                    }
+                    initTts(forceRecreate = true)
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -418,6 +478,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && !hasPlayedWelcomeThisSession && !isExamActive) {
+            mainHandler.postDelayed({
+                tryPlayWelcomeGreeting()
+            }, 250L)
+        }
         if (isExamActive && !hasFocus && !hasCheatedLockout && !isExamDialogOpen) {
             triggerViolation("Membuka Menu Recent Apps / Aplikasi Mengambang (Floating App like ChatGPT / AI Bubble) / Menarik Status Bar")
         }
