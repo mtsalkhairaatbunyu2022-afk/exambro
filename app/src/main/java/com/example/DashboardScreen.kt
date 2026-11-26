@@ -25,6 +25,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -90,6 +91,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -879,98 +881,115 @@ private fun SchoolIdentityBanner(
                     .background(Color.White.copy(alpha = 0.06f))
             )
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(18.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                // Logo MTs Alkhairaat Bunyu (Ujung Kiri Aplikasi)
-                Surface(
-                    modifier = Modifier.size(54.dp),
-                    shape = CircleShape,
-                    color = Color.White,
-                    shadowElevation = 4.dp
-                ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.logo_alkhairaat),
-                        contentDescription = "Logo MTs Alkhairaat Bunyu",
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(5.dp)
-                    )
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val logoSize = when {
+                    maxWidth >= 380.dp -> 76.dp
+                    maxWidth >= 320.dp -> 68.dp
+                    else -> 60.dp
+                }
+                val titleFontSize = when {
+                    maxWidth >= 380.dp -> 22.sp
+                    maxWidth >= 320.dp -> 19.sp
+                    else -> 18.sp
                 }
 
-                // Informasi Identitas Sekolah (Bagian Tengah - Rata Tengah)
-                Column(
-                    modifier = Modifier.weight(1f),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text(
-                        text = "KEMENAG • MTs ALKHAIRAAT",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.5.sp,
-                        color = Color(0xFFB8F1C7),
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = "Exambro CBT",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = Color.White,
-                        textAlign = TextAlign.Center
-                    )
-                    Text(
-                        text = "Browser Ujian Aman",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.88f),
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
+                    // Logo MTs Alkhairaat Bunyu (Ujung Kiri Aplikasi)
                     Surface(
-                        shape = RoundedCornerShape(99.dp),
-                        color = Color.White.copy(alpha = 0.16f)
+                        modifier = Modifier.size(logoSize),
+                        shape = CircleShape,
+                        color = Color.White,
+                        shadowElevation = 4.dp
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        Image(
+                            painter = painterResource(id = R.drawable.logo_alkhairaat),
+                            contentDescription = "Logo MTs Alkhairaat Bunyu",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(3.dp)
+                        )
+                    }
+
+                    // Informasi Identitas Sekolah (Bagian Tengah - Rata Tengah)
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text(
+                            text = "KEMENAG • MTs ALKHAIRAAT",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.2.sp,
+                            color = Color(0xFFB8F1C7),
+                            textAlign = TextAlign.Center,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "Exambro CBT",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontSize = titleFontSize,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color.White,
+                            textAlign = TextAlign.Center
+                        )
+                        Text(
+                            text = "Browser Ujian Aman",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.88f),
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Surface(
+                            shape = RoundedCornerShape(99.dp),
+                            color = Color.White.copy(alpha = 0.16f)
                         ) {
-                            Icon(
-                                imageVector = if (isOnline) Icons.Filled.Wifi else Icons.Filled.WifiOff,
-                                contentDescription = null,
-                                tint = if (isOnline) Color(0xFFA5F39C) else Color(0xFFFFCC80),
-                                modifier = Modifier.size(13.dp)
-                            )
-                            Text(
-                                text = connectionText,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color.White
-                            )
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isOnline) Icons.Filled.Wifi else Icons.Filled.WifiOff,
+                                    contentDescription = null,
+                                    tint = if (isOnline) Color(0xFFA5F39C) else Color(0xFFFFCC80),
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Text(
+                                    text = connectionText,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White
+                                )
+                            }
                         }
                     }
-                }
 
-                // Logo Kemenag RI (Ujung Kanan)
-                Surface(
-                    modifier = Modifier.size(54.dp),
-                    shape = CircleShape,
-                    color = Color.White,
-                    shadowElevation = 4.dp
-                ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.logo_kemenag),
-                        contentDescription = "Logo Kementerian Agama RI",
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(4.dp)
-                    )
+                    // Logo Kemenag RI (Ujung Kanan)
+                    Surface(
+                        modifier = Modifier.size(logoSize),
+                        shape = CircleShape,
+                        color = Color.White,
+                        shadowElevation = 4.dp
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.logo_kemenag),
+                            contentDescription = "Logo Kementerian Agama RI",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(3.dp)
+                        )
+                    }
                 }
             }
         }
