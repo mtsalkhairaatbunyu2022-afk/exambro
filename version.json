@@ -1,0 +1,8 @@
+{
+  "versionCode": 121,
+  "versionName": "1.0.21",
+  "apkUrl": "https://github.com/mtsalkhairaatbunyu2022-afk/exambro/releases/download/latest/exambro-release.apk",
+  "releaseNotes": "feat(ui): add floating animation to dashboard logos\n\nIntroduce infinite floating and breathing animations for the dashboard logos to enhance visual appeal.",
+  "forceUpdate": false,
+  "updatedAt": "2026-11-27T03:32:32Z"
+}
