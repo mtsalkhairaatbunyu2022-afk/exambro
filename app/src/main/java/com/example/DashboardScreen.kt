@@ -13,6 +13,7 @@ import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -893,6 +894,36 @@ private fun SchoolIdentityBanner(
                     else -> 18.sp
                 }
 
+                // Sentuhan animasi halus: efek melayang lembut (floating) dan breathing scale
+                val infiniteTransition = rememberInfiniteTransition(label = "banner_logos_motion")
+                val leftLogoFloat by infiniteTransition.animateFloat(
+                    initialValue = -3f,
+                    targetValue = 3f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(durationMillis = 2400, easing = FastOutSlowInEasing),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "left_logo_float"
+                )
+                val rightLogoFloat by infiniteTransition.animateFloat(
+                    initialValue = 3f,
+                    targetValue = -3f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(durationMillis = 2400, easing = FastOutSlowInEasing),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "right_logo_float"
+                )
+                val logoScale by infiniteTransition.animateFloat(
+                    initialValue = 0.97f,
+                    targetValue = 1.03f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(durationMillis = 2000, easing = FastOutSlowInEasing),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "logo_scale"
+                )
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -900,16 +931,22 @@ private fun SchoolIdentityBanner(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Logo MTs Alkhairaat Bunyu (Ujung Kiri Aplikasi)
+                    // Logo Kementerian Agama RI (Ujung Kiri Aplikasi) dengan animasi melayang lembut
                     Surface(
-                        modifier = Modifier.size(logoSize),
+                        modifier = Modifier
+                            .size(logoSize)
+                            .graphicsLayer {
+                                translationY = leftLogoFloat
+                                scaleX = logoScale
+                                scaleY = logoScale
+                            },
                         shape = CircleShape,
                         color = Color.White,
                         shadowElevation = 4.dp
                     ) {
                         Image(
-                            painter = painterResource(id = R.drawable.logo_alkhairaat),
-                            contentDescription = "Logo MTs Alkhairaat Bunyu",
+                            painter = painterResource(id = R.drawable.logo_kemenag),
+                            contentDescription = "Logo Kementerian Agama RI",
                             contentScale = ContentScale.Fit,
                             modifier = Modifier
                                 .fillMaxSize()
@@ -974,16 +1011,22 @@ private fun SchoolIdentityBanner(
                         }
                     }
 
-                    // Logo Kemenag RI (Ujung Kanan)
+                    // Logo MTs Alkhairaat Bunyu (Ujung Kanan) dengan animasi melayang lembut
                     Surface(
-                        modifier = Modifier.size(logoSize),
+                        modifier = Modifier
+                            .size(logoSize)
+                            .graphicsLayer {
+                                translationY = rightLogoFloat
+                                scaleX = logoScale
+                                scaleY = logoScale
+                            },
                         shape = CircleShape,
                         color = Color.White,
                         shadowElevation = 4.dp
                     ) {
                         Image(
-                            painter = painterResource(id = R.drawable.logo_kemenag),
-                            contentDescription = "Logo Kementerian Agama RI",
+                            painter = painterResource(id = R.drawable.logo_alkhairaat),
+                            contentDescription = "Logo MTs Alkhairaat Bunyu",
                             contentScale = ContentScale.Fit,
                             modifier = Modifier
                                 .fillMaxSize()
